@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LOB Matching Engine — Live Order Book</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Roboto, monospace;
+    margin: 0; padding: 24px;
+  }
+  h1 { font-size: 18px; color: #58a6ff; margin-bottom: 4px; }
+  .sub { color: #8b949e; font-size: 13px; margin-bottom: 20px; }
+  .stats { display: flex; gap: 24px; margin-bottom: 16px; }
+  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px 16px; }
+  .stat .label { font-size: 11px; color: #8b949e; text-transform: uppercase; }
+  .stat .value { font-size: 20px; font-weight: 600; }
+  .bid-color { color: #3fb950; }
+  .ask-color { color: #f85149; }
+  .grid { display: flex; gap: 24px; }
+  .panel { flex: 1; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; color: #8b949e; margin: 0 0 10px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b949e; font-weight: 500; padding: 4px 6px; font-size: 11px; }
+  td { padding: 3px 6px; position: relative; }
+  .bar { position: absolute; top: 0; bottom: 0; opacity: 0.18; z-index: 0; }
+  .row-content { position: relative; z-index: 1; }
+  .trades { margin-top: 20px; }
+  .trade-row { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; border-bottom: 1px solid #21262d; }
+  #status { font-size: 12px; color: #8b949e; margin-top: 20px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .connected { background: #3fb950; }
+  .disconnected { background: #f85149; }
+</style>
+</head>
+<body>
+
+<h1>⚡ LOB Matching Engine</h1>
+<div class="sub">Live price-time priority order book — market maker + momentum bot simulation</div>
+
+<div class="stats">
+  <div class="stat"><div class="label">Best Bid</div><div class="value bid-color" id="best-bid">—</div></div>
+  <div class="stat"><div class="label">Best Ask</div><div class="value ask-color" id="best-ask">—</div></div>
+  <div class="stat"><div class="label">Spread</div><div class="value" id="spread">—</div></div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>Bids</h2>
+    <table>
+      <thead><tr><th>Price</th><th>Quantity</th></tr></thead>
+      <tbody id="bids-body"></tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>Asks</h2>
+    <table>
+      <thead><tr><th>Price</th><th>Quantity</th></tr></thead>
+      <tbody id="asks-body"></tbody>
+    </table>
+  </div>
+  <div class="panel" style="flex: 0.8;">
+    <h2>Recent Trades</h2>
+    <div id="trades-list" class="trades"></div>
+  </div>
+</div>
+
+<div id="status"><span class="dot disconnected" id="status-dot"></span><span id="status-text">Connecting...</span></div>
+
+<script>
+const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+const ws = new WebSocket(wsProtocol + window.location.host + "/ws/orderbook");
+
+ws.onopen = () => {
+  document.getElementById("status-dot").className = "dot connected";
+  document.getElementById("status-text").innerText = "Connected — streaming live";
+};
+ws.onclose = () => {
+  document.getElementById("status-dot").className = "dot disconnected";
+  document.getElementById("status-text").innerText = "Disconnected";
+};
+
+function maxQty(levels) {
+  return Math.max(1, ...levels.map(l => l.quantity));
+}
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  const { depth, trades, spread, best_bid, best_ask } = data;
+
+  document.getElementById("best-bid").innerText = best_bid ?? "—";
+  document.getElementById("best-ask").innerText = best_ask ?? "—";
+  document.getElementById("spread").innerText = spread ?? "—";
+
+  const bidMax = maxQty(depth.bids);
+  const askMax = maxQty(depth.asks);
+
+  document.getElementById("bids-body").innerHTML = depth.bids.map(b => `
+    <tr>
+      <td><div class="bar" style="left:0; width:${(b.quantity / bidMax * 100).toFixed(0)}%; background:#3fb950;"></div>
+          <span class="row-content bid-color">${b.price.toFixed(2)}</span></td>
+      <td><span class="row-content">${b.quantity}</span></td>
+    </tr>`).join("");
+
+  document.getElementById("asks-body").innerHTML = depth.asks.map(a => `
+    <tr>
+      <td><div class="bar" style="left:0; width:${(a.quantity / askMax * 100).toFixed(0)}%; background:#f85149;"></div>
+          <span class="row-content ask-color">${a.price.toFixed(2)}</span></td>
+      <td><span class="row-content">${a.quantity}</span></td>
+    </tr>`).join("");
+
+  document.getElementById("trades-list").innerHTML = trades.slice().reverse().map(t => `
+    <div class="trade-row">
+      <span class="${t.aggressor_side === 'BUY' ? 'bid-color' : 'ask-color'}">${t.price.toFixed(2)}</span>
+      <span>${t.quantity}</span>
+    </div>`).join("");
+};
+</script>
+
+</body>
+</html>
